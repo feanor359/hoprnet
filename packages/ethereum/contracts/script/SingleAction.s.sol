@@ -325,8 +325,9 @@ contract SingleActionFromPrivateKeyScript is Test, NetworkConfig {
         // 3. approve token transfer, as an owner of safe
         approveChannelsForTokenTransferBySafe(safe);
 
-        // 4. add announcement contract as target, as an owner of safe
-        addAllAllowedTargetToModuleBySafe(currentNetworkDetail.addresses.announcements, safe, module);
+        // // 4. add announcement contract as target, as an owner of safe
+        // FIXME: some modules may not have included the announcement contract
+        // addAllAllowedTargetToModuleBySafe(currentNetworkDetail.addresses.announcements, safe, module);
         // bytes memory
         vm.stopBroadcast();
 
