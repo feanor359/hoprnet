@@ -12,10 +12,10 @@ volumes:
 
 services:
   hopr-admin:
-    image: hopr-admin
-    build:
-      context: https://github.com/hoprnet/hopr-admin.git#f15eaaf2031b061b6eb304b8a5c4ec36df603827:.
-      dockerfile: scripts/NodeAdmin.Dockerfile
+    image: ${HOPRD_ADMIN_DOCKER_IMAGE}
+    container_name: hopr-admin
+    hostname: hopr-admin
+    platform: linux/amd64
     ports:
       - 3000:80
     depends_on:
@@ -25,6 +25,7 @@ services:
 
   hoprd:
     image: ${HOPRD_DOCKER_IMAGE}
+    platform: linux/amd64
     pull_policy: always
     mem_reservation: 1g
     mem_limit: 4g
@@ -44,8 +45,9 @@ services:
       - .env-default
       - .env
     volumes:
-      - hoprd_data:/app/hoprd-db'
-      - '/var/run/docker.sock:/var/run/docker.sock'
+      - hoprd_data:/app/hoprd-db
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOPRD_IDENTITY_FILE_PATH}:/app/hoprd-db/.hoprd.id
     logging:
       driver: json-file
       options:
@@ -94,7 +96,7 @@ services:
       - hopr-net
 
   prometheus:
-    image: prom/prometheus:v2.47.2@sha256:3002935850ea69a59816825d4cb718fafcdb9b124e4e6153ebc6894627525f7f
+    image: prom/prometheus:v2.48.0
     restart: always
     container_name: prometheus
     hostname: prometheus
@@ -117,9 +119,11 @@ services:
       - hopr-net
 
   grafana:
-    image: grafana/grafana:9.5.1@sha256:00a4d2889c2b32f86c50673b1a82cb5b45349f1c24b0a882d11a53518e2ecae4
+    image: grafana/grafana:10.1.5
     user: '472'
     restart: always
+    container_name: grafana
+    hostname: grafana
     environment:
       GF_INSTALL_PLUGINS: 'grafana-clock-panel,grafana-simple-json-datasource'
     volumes:

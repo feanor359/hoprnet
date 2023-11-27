@@ -16,6 +16,7 @@ scrape_configs:
       - targets: ['hoprd:3001']
         labels:
           group: 'hopr'
+          hoprd_network: dufour
     metrics_path: /api/v3/node/metrics
 
   - job_name: 'cadvisor'
