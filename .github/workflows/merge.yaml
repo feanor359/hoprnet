@@ -252,6 +252,20 @@ jobs:
           name: HOPR - v${{ steps.setup.outputs.current_version }}
           tag_name: v${{ steps.setup.outputs.current_version }}
 
+      - name: Send message to Zulip
+        uses: zulip/zulip-action@v1
+        with:
+          api-key: ${{ secrets.ZULIP_API_KEY }}
+          email: ${{ secrets.ZULIP_EMAIL }}
+          organization-url: "https://hopr.zulipchat.com"
+          type: "stream"
+          to: "Releases"
+          topic: "main"
+          content: |
+            The hoprd release ${{ steps.setup.outputs.current_version }} has been launched and is now available to be downloaded and use it.
+            You can download it from `docker pull hoprnet/hoprd:${{ steps.setup.outputs.current_version }}`
+            See [what includes](https://github.com/hoprnet/hoprnet/releases/tag/v${{ steps.setup.outputs.current_version }})
+
       - name: Close Milestone
         run: |
           gh api --method PATCH -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/${{ github.repository }}/milestones/${{ steps.changelog.outputs.milestone_number }} -f state='closed'
