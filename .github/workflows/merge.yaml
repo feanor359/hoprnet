@@ -253,7 +253,7 @@ jobs:
           tag_name: v${{ steps.setup.outputs.current_version }}
 
       - name: Send message to Zulip
-        uses: zulip/zulip-action@v1
+        uses: zulip/github-actions-zulip/send-message@v1
         with:
           api-key: ${{ secrets.ZULIP_API_KEY }}
           email: ${{ secrets.ZULIP_EMAIL }}
