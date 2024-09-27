@@ -31,11 +31,11 @@ on:
       nodes:
         type: choice
         options:
-          - rotsee
-          - dufour
-          - team
-          - relayer
+          - many2many
           - sender
+          - relayer
+          - receiver
+          - team
         required: true
         description: 'hoprd nodes setup'
       workload:
