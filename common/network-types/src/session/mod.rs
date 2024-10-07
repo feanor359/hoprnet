@@ -20,8 +20,8 @@
 pub mod errors;
 mod frame;
 pub mod protocol;
+mod seq;
 pub mod state;
 mod utils;
-mod seq;
 
 pub use frame::{Frame, FrameId, FrameInfo, FrameReassembler, Segment, SegmentId};
