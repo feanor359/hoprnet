@@ -119,31 +119,27 @@ where
                 self.next_id += 1;
 
                 return if is_next_ready {
-                    tracing::trace!("Sequencer::poll_next ready");
+                    tracing::trace!("Sequencer::poll_next ready {current_to_emit}");
                     Poll::Ready(self.buffer.pop().map(|r| Ok(r.0)))
                 } else {
-                    tracing::trace!("Sequencer::poll_next discard");
+                    tracing::trace!("Sequencer::poll_next discard {current_to_emit}");
                     Poll::Ready(Some(Err(SessionError::FrameDiscarded(current_to_emit))))
                 };
             }
+
+            if self.is_closed && !is_next_ready {
+                // If the Sink is closed, but the buffer is not empty,
+                // we emit the missing ones as discarded frames, until we
+                // catch up with the rest of the buffered frames
+                self.next_id += 1;
+                tracing::trace!("Sequencer::poll_next discard {current_to_emit}");
+                return Poll::Ready(Some(Err(SessionError::FrameDiscarded(current_to_emit))));
+            }
         }
 
-        if self.is_closed {
-            // If the Sink is closed, but the buffer is not empty,
-            // we need to schedule automatic wake-up after the timeout
-            // since the last emitted frame has elapsed.
-            let next_wake_up = self.timeout - self.last_emitted.elapsed();
-            let waker = cx.waker().clone();
-            hopr_async_runtime::prelude::spawn(async move {
-                hopr_async_runtime::prelude::sleep(next_wake_up).await;
-                waker.wake();
-            });
-            tracing::trace!("Sequencer::poll_next pending on close");
-        } else {
-            // Otherwise, the next Sink operation will wake us up
-            self.tx_waker = Some(cx.waker().clone());
-            tracing::trace!("Sequencer::poll_next pending");
-        }
+        // The next Sink operation will wake us up
+        self.tx_waker = Some(cx.waker().clone());
+        tracing::trace!("Sequencer::poll_next pending");
 
         Poll::Pending
     }
@@ -197,18 +193,20 @@ mod tests {
     }
 
     #[test_log::test(async_std::test)]
-    async fn sequencer_should_skip_entry_on_timeout() -> anyhow::Result<()> {
-        let timeout = Duration::from_millis(50);
-        let (seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
+    async fn sequencer_should_discard_entry_on_timeout() -> anyhow::Result<()> {
+        let timeout = Duration::from_millis(25);
+        let (mut seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
 
-        let input = vec![2u32, 1, 4, 5, 8, 7];
+        let input = vec![2u32, 1, 4, 5, 8, 7, 9, 11, 10];
 
-        async_std::task::spawn(
-            futures::stream::iter(input.clone())
-                .map(Ok)
-                .forward(seq_sink)
-                .delay(Duration::from_millis(10)),
-        );
+        let input_clone = input.clone();
+        async_std::task::spawn(async move {
+            for v in input_clone {
+                seq_sink.feed(v).delay(Duration::from_millis(5)).await?;
+            }
+            seq_sink.flush().await?;
+            seq_sink.close().await
+        });
 
         pin_mut!(seq_stream);
 
@@ -225,16 +223,56 @@ mod tests {
         assert_eq!(Some(4), seq_stream.try_next().await?);
         assert_eq!(Some(5), seq_stream.try_next().await?);
 
-        let now = Instant::now();
         assert!(matches!(
             seq_stream.try_next().await,
             Err(SessionError::FrameDiscarded(6))
         ));
-        assert!(now.elapsed() >= timeout);
 
         assert_eq!(Some(7), seq_stream.try_next().await?);
         assert_eq!(Some(8), seq_stream.try_next().await?);
+        assert_eq!(Some(9), seq_stream.try_next().await?);
+        assert_eq!(Some(10), seq_stream.try_next().await?);
+        assert_eq!(Some(11), seq_stream.try_next().await?);
 
+        assert_eq!(None, seq_stream.try_next().await?);
+
+        Ok(())
+    }
+
+    #[test_log::test(async_std::test)]
+    async fn sequencer_should_discard_entry_close() -> anyhow::Result<()> {
+        let timeout = Duration::from_millis(25);
+        let (seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
+
+        let input = vec![2u32, 1, 3, 5, 4, 8, 11];
+
+        let _ = async_std::task::spawn(futures::stream::iter(input.clone()).map(Ok).forward(seq_sink)).await;
+
+        pin_mut!(seq_stream);
+
+        assert_eq!(Some(1), seq_stream.try_next().await?);
+        assert_eq!(Some(2), seq_stream.try_next().await?);
+        assert_eq!(Some(3), seq_stream.try_next().await?);
+        assert_eq!(Some(4), seq_stream.try_next().await?);
+        assert_eq!(Some(5), seq_stream.try_next().await?);
+        assert!(matches!(
+            seq_stream.try_next().await,
+            Err(SessionError::FrameDiscarded(6))
+        ));
+        assert!(matches!(
+            seq_stream.try_next().await,
+            Err(SessionError::FrameDiscarded(7))
+        ));
+        assert_eq!(Some(8), seq_stream.try_next().await?);
+        assert!(matches!(
+            seq_stream.try_next().await,
+            Err(SessionError::FrameDiscarded(9))
+        ));
+        assert!(matches!(
+            seq_stream.try_next().await,
+            Err(SessionError::FrameDiscarded(10))
+        ));
+        assert_eq!(Some(11), seq_stream.try_next().await?);
         assert_eq!(None, seq_stream.try_next().await?);
 
         Ok(())

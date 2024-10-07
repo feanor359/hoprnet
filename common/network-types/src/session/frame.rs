@@ -150,7 +150,7 @@ impl PartialEq<FrameId> for Frame {
 
 impl PartialOrd<FrameId> for Frame {
     fn partial_cmp(&self, other: &FrameId) -> Option<std::cmp::Ordering> {
-        Some(self.frame_id.cmp(&other))
+        Some(self.frame_id.cmp(other))
     }
 }
 
