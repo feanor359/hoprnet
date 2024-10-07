@@ -38,7 +38,10 @@ impl<T: Ord> Sequencer<T> {
     }
 }
 
-impl<T: Ord> futures::Sink<T> for Sequencer<T> {
+impl<T> futures::Sink<T> for Sequencer<T>
+where
+    T: Ord + PartialOrd<FrameId>,
+{
     type Error = SessionError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -57,11 +60,15 @@ impl<T: Ord> futures::Sink<T> for Sequencer<T> {
     fn start_send(self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
         let this = self.project();
         if !*this.is_closed {
-            this.buffer.push(std::cmp::Reverse(item));
-            if this.buffer.len() >= *this.flush_at {
-                if let Some(waker) = this.tx_waker.take() {
-                    waker.wake();
+            if item.ge(this.next_id) {
+                this.buffer.push(std::cmp::Reverse(item));
+                if this.buffer.len() >= *this.flush_at {
+                    if let Some(waker) = this.tx_waker.take() {
+                        waker.wake();
+                    }
                 }
+            } else {
+                tracing::trace!("cannot accept frame older than {}", this.next_id);
             }
             Ok(())
         } else {
