@@ -136,6 +136,30 @@ impl AsRef<[u8]> for Frame {
     }
 }
 
+impl PartialOrd<Frame> for Frame {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq<FrameId> for Frame {
+    fn eq(&self, other: &FrameId) -> bool {
+        self.frame_id == *other
+    }
+}
+
+impl PartialOrd<FrameId> for Frame {
+    fn partial_cmp(&self, other: &FrameId) -> Option<std::cmp::Ordering> {
+        Some(self.frame_id.cmp(&other))
+    }
+}
+
+impl Ord for Frame {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.frame_id.cmp(&other.frame_id)
+    }
+}
+
 /// Represents a frame segment.
 /// Besides the data, a segment carries information about the total number of
 /// segments in the original frame, its index within the frame and

@@ -201,11 +201,11 @@ mod tests {
         let timeout = Duration::from_millis(50);
         let (seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
 
-        let input = vec![2u32, 1, 4];
+        let input = vec![2u32, 1, 4, 5, 8, 7];
 
         async_std::task::spawn(
             futures::stream::iter(input.clone())
-                .then(futures::future::ok)
+                .map(Ok)
                 .forward(seq_sink)
                 .delay(Duration::from_millis(10)),
         );
@@ -223,6 +223,18 @@ mod tests {
         assert!(now.elapsed() >= timeout);
 
         assert_eq!(Some(4), seq_stream.try_next().await?);
+        assert_eq!(Some(5), seq_stream.try_next().await?);
+
+        let now = Instant::now();
+        assert!(matches!(
+            seq_stream.try_next().await,
+            Err(SessionError::FrameDiscarded(6))
+        ));
+        assert!(now.elapsed() >= timeout);
+
+        assert_eq!(Some(7), seq_stream.try_next().await?);
+        assert_eq!(Some(8), seq_stream.try_next().await?);
+
         assert_eq!(None, seq_stream.try_next().await?);
 
         Ok(())

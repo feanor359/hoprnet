@@ -20,7 +20,8 @@
 pub mod errors;
 mod frame;
 pub mod protocol;
-mod seq;
+mod reassembly;
+mod sequencer;
 pub mod state;
 mod utils;
 
