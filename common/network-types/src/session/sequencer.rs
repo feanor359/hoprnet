@@ -68,7 +68,7 @@ where
                     }
                 }
             } else {
-                tracing::trace!("cannot accept frame older than {}", this.next_id);
+                tracing::warn!("cannot accept frame older than {}", this.next_id);
             }
             Ok(())
         } else {
@@ -196,6 +196,28 @@ mod tests {
 
         expected.sort();
         assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    #[test_log::test(async_std::test)]
+    async fn sequencer_should_not_allow_emitted_entries() -> anyhow::Result<()> {
+        let (seq_sink, seq_stream) = Sequencer::<u32>::new(Duration::from_secs(2), 0).split();
+
+        pin_mut!(seq_sink);
+        pin_mut!(seq_stream);
+
+        seq_sink.send(1u32).await?;
+        assert_eq!(Some(1), seq_stream.try_next().await?);
+
+        seq_sink.send(2u32).await?;
+        assert_eq!(Some(2), seq_stream.try_next().await?);
+
+        seq_sink.send(2u32).await?;
+        seq_sink.send(1u32).await?;
+
+        seq_sink.send(3u32).await?;
+        assert_eq!(Some(3), seq_stream.try_next().await?);
+
         Ok(())
     }
 

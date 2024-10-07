@@ -2,7 +2,7 @@ use crate::prelude::errors::SessionError;
 use crate::prelude::{Frame, FrameId, Segment};
 use crate::session::frame::SeqNum;
 use crate::session::sequencer::Sequencer;
-use futures::{pin_mut, StreamExt};
+use futures::StreamExt;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::pin::Pin;
@@ -196,76 +196,31 @@ impl futures::Stream for Reassembler {
     }
 }
 
-pub struct Reconstructor {
-    sink: Pin<Box<dyn futures::Sink<Segment, Error = SessionError>>>,
-    stream: Pin<Box<dyn futures::Stream<Item = Result<Frame, SessionError>>>>,
-}
+pub fn frame_reconstructor(
+    frame_timeout: Duration,
+) -> (
+    impl futures::Sink<Segment, Error = SessionError>,
+    impl futures::Stream<Item = Result<Frame, SessionError>>,
+) {
+    let (sink, rs_stream) = Reassembler::new(frame_timeout).split();
+    let (seq_sink, stream) = Sequencer::new(frame_timeout, 0).split();
 
-impl Reconstructor {
-    pub fn new(frame_timeout: Duration) -> Self {
-        let (sink, rs_stream) = Reassembler::new(frame_timeout).split();
-        let (seq_sink, stream) = Sequencer::new(frame_timeout, 0).split();
-
-        hopr_async_runtime::prelude::spawn(
-            rs_stream
-                .filter_map(|maybe_frame| async {
-                    maybe_frame
-                        .inspect_err(|e| tracing::error!("failed to reassemble frame {e}"))
-                        .ok()
-                        .map(Ok)
-                })
-                .forward(seq_sink),
-        );
-
-        Self {
-            sink: Box::pin(sink),
-            stream: Box::pin(stream),
-        }
-    }
-}
-
-impl futures::Sink<Segment> for Reconstructor {
-    type Error = SessionError;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = self.as_mut();
-        pin_mut!(inner);
-        inner.poll_ready(cx)
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: Segment) -> Result<(), Self::Error> {
-        let inner = self.as_mut();
-        pin_mut!(inner);
-        inner.start_send(item)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = &mut self.sink;
-        pin_mut!(inner);
-        inner.poll_flush(cx)
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = &mut self.sink;
-        pin_mut!(inner);
-        inner.poll_close(cx)
-    }
-}
-
-impl futures::Stream for Reconstructor {
-    type Item = Result<Frame, SessionError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let inner = &mut self.stream;
-        pin_mut!(inner);
-        inner.poll_next(cx)
-    }
+    hopr_async_runtime::prelude::spawn(
+        rs_stream
+            .filter_map(|maybe_frame| async {
+                maybe_frame
+                    .inspect_err(|e| tracing::error!("failed to reassemble frame: {e}"))
+                    .ok()
+                    .map(Ok)
+            })
+            .forward(seq_sink),
+    );
+    (sink, stream)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::sequencer::Sequencer;
     use async_std::prelude::FutureExt;
     use futures::{StreamExt, TryStreamExt};
     use hex_literal::hex;
@@ -427,10 +382,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let (r_sink, r_stream) = Reassembler::new(Duration::from_secs(5)).split();
-        let (seq_sink, seq_stream) = Sequencer::new(Duration::from_secs(5), 0).split();
-
-        hopr_async_runtime::prelude::spawn(r_stream.forward(seq_sink));
+        let (r_sink, seq_stream) = frame_reconstructor(Duration::from_secs(5));
 
         let mut segments = expected
             .iter()
@@ -461,19 +413,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let (r_sink, r_stream) = Reassembler::new(Duration::from_millis(50)).split();
-        let (seq_sink, seq_stream) = Sequencer::new(Duration::from_millis(60), 0).split();
-
-        hopr_async_runtime::prelude::spawn(
-            r_stream
-                .filter_map(|maybe_frame| async {
-                    maybe_frame
-                        .inspect_err(|e| tracing::error!("failed to reassemble frame {e}"))
-                        .ok()
-                        .map(Ok)
-                })
-                .forward(seq_sink),
-        );
+        let (r_sink, seq_stream) = frame_reconstructor(Duration::from_millis(50));
 
         let mut segments = expected
             .iter()
