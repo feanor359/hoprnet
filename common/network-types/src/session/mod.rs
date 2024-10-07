@@ -22,5 +22,6 @@ mod frame;
 pub mod protocol;
 pub mod state;
 mod utils;
+mod seq;
 
 pub use frame::{Frame, FrameId, FrameInfo, FrameReassembler, Segment, SegmentId};
