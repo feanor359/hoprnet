@@ -27,19 +27,16 @@ mod utils;
 
 pub use frame::{Frame, FrameId, FrameInfo, FrameReassembler, Segment, SegmentId};
 
-use crate::prelude::errors::SessionError;
-use crate::session::reassembly::Reassembler;
-use crate::session::sequencer::{Sequencer, SequencerConfig};
-use futures::StreamExt;
-
 pub fn frame_reconstructor(
     frame_timeout: std::time::Duration,
 ) -> (
-    impl futures::Sink<Segment, Error = SessionError>,
-    impl futures::Stream<Item = Result<Frame, SessionError>>,
+    impl futures::Sink<Segment, Error = errors::SessionError>,
+    impl futures::Stream<Item = Result<Frame, errors::SessionError>>,
 ) {
-    let (sink, rs_stream) = Reassembler::new(frame_timeout).split();
-    let (seq_sink, stream) = Sequencer::new(SequencerConfig {
+    use futures::StreamExt;
+
+    let (sink, rs_stream) = reassembly::Reassembler::new(frame_timeout).split();
+    let (seq_sink, stream) = sequencer::Sequencer::new(sequencer::SequencerConfig {
         timeout: frame_timeout,
         ..Default::default()
     })
@@ -71,9 +68,11 @@ mod tests {
     use super::*;
 
     use async_std::prelude::FutureExt;
-    use futures::TryStreamExt;
+    use futures::{StreamExt, TryStreamExt};
     use rand::prelude::*;
     use std::time::Duration;
+
+    use crate::prelude::errors::SessionError;
 
     const RNG_SEED: [u8; 32] = hex_literal::hex!("d8a471f1c20490a3442b96fdde9d1807428096e1601b0cef0eea7e6d44a24c01");
 
