@@ -1,13 +1,12 @@
-use crate::prelude::errors::SessionError;
-use crate::prelude::{Frame, FrameId, Segment};
-use crate::session::frame::SeqNum;
-use crate::session::sequencer::Sequencer;
-use futures::StreamExt;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
+
+use crate::prelude::errors::SessionError;
+use crate::prelude::{Frame, FrameId, Segment};
+use crate::session::frame::SeqNum;
 
 #[derive(Debug)]
 struct FrameBuilder {
@@ -96,8 +95,7 @@ impl futures::Sink<Segment> for Reassembler {
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         tracing::trace!("Reassembler::poll_ready");
-        let this = self.project();
-        if !*this.is_closed {
+        if !self.is_closed {
             Poll::Ready(Ok(()))
         } else {
             Poll::Ready(Err(SessionError::ReassemblerClosed))
@@ -105,65 +103,64 @@ impl futures::Sink<Segment> for Reassembler {
     }
 
     fn start_send(self: Pin<&mut Self>, item: Segment) -> Result<(), Self::Error> {
-        let this = self.project();
-        if !*this.is_closed {
-            match this.frames.entry(item.frame_id) {
-                Entry::Occupied(mut e) => {
-                    let builder = e.get_mut();
-                    builder.add_segment(item);
-                    if builder.remaining() == 0 {
-                        tracing::trace!("frame {} is complete", e.key());
-                        this.complete_frames.push_back(e.remove().build());
-                        if let Some(waker) = this.tx_waker.take() {
-                            waker.wake();
-                        }
-                    }
-                }
-                Entry::Vacant(e) => {
-                    let builder = FrameBuilder::from(item);
-                    if builder.remaining() == 0 {
-                        tracing::trace!("single segment frame {} is complete", builder.frame_id());
-                        this.complete_frames.push_back(builder.build());
-                        if let Some(waker) = this.tx_waker.take() {
-                            waker.wake();
-                        }
-                    } else {
-                        e.insert(builder);
-                    }
-                }
-            };
-
-            Ok(())
-        } else {
-            Err(SessionError::ReassemblerClosed)
+        if self.is_closed {
+            return Err(SessionError::ReassemblerClosed);
         }
+
+        let this = self.project();
+        match this.frames.entry(item.frame_id) {
+            Entry::Occupied(mut e) => {
+                let builder = e.get_mut();
+                builder.add_segment(item);
+                if builder.remaining() == 0 {
+                    tracing::trace!("frame {} is complete", e.key());
+                    this.complete_frames.push_back(e.remove().build());
+                    if let Some(waker) = this.tx_waker.take() {
+                        waker.wake();
+                    }
+                }
+            }
+            Entry::Vacant(e) => {
+                let builder = FrameBuilder::from(item);
+                if builder.remaining() == 0 {
+                    tracing::trace!("single segment frame {} is complete", builder.frame_id());
+                    this.complete_frames.push_back(builder.build());
+                    if let Some(waker) = this.tx_waker.take() {
+                        waker.wake();
+                    }
+                } else {
+                    e.insert(builder);
+                }
+            }
+        };
+
+        Ok(())
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         tracing::trace!("Reassembler::poll_flush");
-        let this = self.project();
-        if !*this.is_closed {
-            if let Some(waker) = this.tx_waker.take() {
-                waker.wake();
-            }
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Ready(Err(SessionError::ReassemblerClosed))
+        if self.is_closed {
+            return Poll::Ready(Err(SessionError::ReassemblerClosed));
         }
+
+        if let Some(waker) = self.project().tx_waker.take() {
+            waker.wake();
+        }
+        Poll::Ready(Ok(()))
     }
 
     fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         tracing::trace!("Reassembler::poll_close");
-        let this = self.project();
-        if !*this.is_closed {
-            *this.is_closed = true;
-            if let Some(waker) = this.tx_waker.take() {
-                waker.wake();
-            }
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Ready(Err(SessionError::ReassemblerClosed))
+        if self.is_closed {
+            return Poll::Ready(Err(SessionError::ReassemblerClosed));
         }
+
+        let this = self.project();
+        *this.is_closed = true;
+        if let Some(waker) = this.tx_waker.take() {
+            waker.wake();
+        }
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -194,28 +191,6 @@ impl futures::Stream for Reassembler {
             Poll::Ready(None)
         }
     }
-}
-
-pub fn frame_reconstructor(
-    frame_timeout: Duration,
-) -> (
-    impl futures::Sink<Segment, Error = SessionError>,
-    impl futures::Stream<Item = Result<Frame, SessionError>>,
-) {
-    let (sink, rs_stream) = Reassembler::new(frame_timeout).split();
-    let (seq_sink, stream) = Sequencer::new(frame_timeout, 0).split();
-
-    hopr_async_runtime::prelude::spawn(
-        rs_stream
-            .filter_map(|maybe_frame| async {
-                maybe_frame
-                    .inspect_err(|e| tracing::error!("failed to reassemble frame: {e}"))
-                    .ok()
-                    .map(Ok)
-            })
-            .forward(seq_sink),
-    );
-    (sink, stream)
 }
 
 #[cfg(test)]
@@ -250,7 +225,7 @@ mod tests {
         let mut rng = StdRng::from_seed(RNG_SEED);
         segments.shuffle(&mut rng);
 
-        hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
+        let jh = hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
 
         let mut actual = r_stream
             .try_collect::<Vec<_>>()
@@ -262,7 +237,7 @@ mod tests {
         actual.sort();
         assert_eq!(actual, expected);
 
-        Ok(())
+        Ok(jh.await?)
     }
 
     #[test_log::test(async_std::test)]
@@ -287,7 +262,7 @@ mod tests {
         segments.shuffle(&mut rng);
 
         let seg_count = segments.len();
-        hopr_async_runtime::prelude::spawn(
+        let jh = hopr_async_runtime::prelude::spawn(
             futures::stream::iter(segments)
                 .enumerate()
                 .then(move |(i, s)| {
@@ -324,7 +299,7 @@ mod tests {
             }
         }
 
-        Ok(())
+        Ok(jh.await?)
     }
 
     #[test_log::test(async_std::test)]
@@ -348,7 +323,7 @@ mod tests {
         let mut rng = StdRng::from_seed(RNG_SEED);
         segments.shuffle(&mut rng);
 
-        hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
+        let jh = hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
 
         let mut actual = r_stream.collect::<Vec<_>>().timeout(Duration::from_secs(5)).await?;
 
@@ -370,73 +345,6 @@ mod tests {
             }
         }
 
-        Ok(())
-    }
-
-    #[async_std::test]
-    pub async fn reassembler_and_sequencer_test() -> anyhow::Result<()> {
-        let expected = (1u32..=10)
-            .map(|frame_id| Frame {
-                frame_id,
-                data: hopr_crypto_random::random_bytes::<100>().into(),
-            })
-            .collect::<Vec<_>>();
-
-        let (r_sink, seq_stream) = frame_reconstructor(Duration::from_secs(5));
-
-        let mut segments = expected
-            .iter()
-            .cloned()
-            .flat_map(|f| f.segment(22).unwrap())
-            .collect::<Vec<_>>();
-
-        let mut rng = StdRng::from_seed(RNG_SEED);
-        segments.shuffle(&mut rng);
-
-        hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
-
-        let actual = seq_stream
-            .try_collect::<Vec<_>>()
-            .timeout(Duration::from_secs(5))
-            .await??;
-
-        assert_eq!(actual, expected);
-        Ok(())
-    }
-
-    #[test_log::test(async_std::test)]
-    pub async fn reassembler_and_sequencer_test_missing_segment() -> anyhow::Result<()> {
-        let expected = (1u32..=10)
-            .map(|frame_id| Frame {
-                frame_id,
-                data: hopr_crypto_random::random_bytes::<100>().into(),
-            })
-            .collect::<Vec<_>>();
-
-        let (r_sink, seq_stream) = frame_reconstructor(Duration::from_millis(50));
-
-        let mut segments = expected
-            .iter()
-            .cloned()
-            .flat_map(|f| f.segment(22).unwrap())
-            .filter(|s| s.frame_id != 4 || s.seq_idx != 1)
-            .collect::<Vec<_>>();
-
-        let mut rng = StdRng::from_seed(RNG_SEED);
-        segments.shuffle(&mut rng);
-
-        hopr_async_runtime::prelude::spawn(futures::stream::iter(segments).map(Ok).forward(r_sink));
-
-        let actual = seq_stream.collect::<Vec<_>>().timeout(Duration::from_secs(5)).await?;
-
-        assert_eq!(actual.len(), expected.len());
-        for i in 0..expected.len() {
-            if i != 3 {
-                assert!(matches!(&actual[i], Ok(frame) if expected[i].eq(frame)));
-            } else {
-                assert!(matches!(actual[i], Err(SessionError::FrameDiscarded(4))))
-            }
-        }
-        Ok(())
+        Ok(jh.await?)
     }
 }

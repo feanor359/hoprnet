@@ -6,35 +6,44 @@ use std::time::{Duration, Instant};
 use crate::prelude::errors::SessionError;
 use crate::prelude::FrameId;
 
+#[derive(Copy, Clone, Debug)]
+pub struct SequencerConfig {
+    pub timeout: Duration,
+    pub flush_at: usize,
+    pub initial_capacity: usize,
+}
+
+impl Default for SequencerConfig {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(5),
+            flush_at: 0,
+            initial_capacity: 1024,
+        }
+    }
+}
+
 #[derive(Debug)]
 #[pin_project::pin_project]
 pub struct Sequencer<T> {
     buffer: BinaryHeap<std::cmp::Reverse<T>>,
     next_id: FrameId,
     last_emitted: Instant,
-    timeout: Duration,
     tx_waker: Option<Waker>,
     is_closed: bool,
-    flush_at: usize,
-    initial_capacity: usize,
+    cfg: SequencerConfig,
 }
 
 impl<T: Ord> Sequencer<T> {
-    pub fn with_capacity(timeout: Duration, flush_at: usize, initial_capacity: usize) -> Self {
+    pub fn new(cfg: SequencerConfig) -> Self {
         Self {
-            buffer: BinaryHeap::with_capacity(initial_capacity),
-            next_id: 1_u32,
-            is_closed: false,
+            buffer: BinaryHeap::with_capacity(cfg.initial_capacity),
+            next_id: 1,
             last_emitted: Instant::now(),
             tx_waker: None,
-            flush_at,
-            timeout,
-            initial_capacity,
+            is_closed: false,
+            cfg,
         }
-    }
-
-    pub fn new(timeout: Duration, flush_at: usize) -> Self {
-        Self::with_capacity(timeout, flush_at, 1024)
     }
 }
 
@@ -48,8 +57,8 @@ where
         tracing::trace!("Sequencer::poll_ready");
         let this = self.project();
         if !*this.is_closed {
-            if this.buffer.len() >= *this.initial_capacity {
-                this.buffer.reserve(*this.initial_capacity);
+            if this.buffer.len() >= this.cfg.initial_capacity {
+                this.buffer.reserve(this.cfg.initial_capacity);
             }
             Poll::Ready(Ok(()))
         } else {
@@ -62,7 +71,7 @@ where
         if !*this.is_closed {
             if item.ge(this.next_id) {
                 this.buffer.push(std::cmp::Reverse(item));
-                if this.buffer.len() >= *this.flush_at {
+                if this.buffer.len() >= this.cfg.flush_at {
                     if let Some(waker) = this.tx_waker.take() {
                         waker.wake();
                     }
@@ -121,7 +130,7 @@ where
             let current_to_emit = self.next_id;
             let is_next_ready = current_item.eq(&current_to_emit);
 
-            if is_next_ready || self.last_emitted.elapsed() >= self.timeout {
+            if is_next_ready || self.last_emitted.elapsed() >= self.cfg.timeout {
                 self.last_emitted = Instant::now();
                 self.next_id += 1;
 
@@ -137,7 +146,7 @@ where
             if self.is_closed && !is_next_ready {
                 // If the Sink is closed, but the buffer is not empty,
                 // we emit the missing ones as discarded frames, until we
-                // catch up with the rest of the buffered frames
+                // catch up with the rest of the buffered frames to flush out.
                 self.next_id += 1;
                 tracing::trace!("Sequencer::poll_next discard {current_to_emit}");
                 return Poll::Ready(Some(Err(SessionError::FrameDiscarded(current_to_emit))));
@@ -160,11 +169,16 @@ mod tests {
 
     #[test_log::test(async_std::test)]
     async fn sequencer_should_return_entries_in_order() -> anyhow::Result<()> {
-        let (seq_sink, seq_stream) = Sequencer::<u32>::new(Duration::from_secs(2), 0).split();
+        let cfg = SequencerConfig {
+            timeout: Duration::from_secs(2),
+            ..Default::default()
+        };
+
+        let (seq_sink, seq_stream) = Sequencer::<u32>::new(cfg).split();
 
         let mut expected = vec![4u32, 1, 5, 7, 8, 6, 2, 3];
 
-        async_std::task::spawn(
+        let jh = hopr_async_runtime::prelude::spawn(
             futures::stream::iter(expected.clone())
                 .then(|e| futures::future::ok(e).delay(Duration::from_millis(5)))
                 .forward(seq_sink),
@@ -174,17 +188,24 @@ mod tests {
 
         expected.sort();
         assert_eq!(expected, actual);
-        Ok(())
+
+        Ok(jh.await?)
     }
 
     #[test_log::test(async_std::test)]
     async fn sequencer_should_return_entries_in_order_without_flush() -> anyhow::Result<()> {
-        let (mut seq_sink, seq_stream) = Sequencer::<u32>::new(Duration::from_secs(1), usize::MAX).split();
+        let cfg = SequencerConfig {
+            timeout: Duration::from_secs(1),
+            flush_at: usize::MAX,
+            ..Default::default()
+        };
+
+        let (mut seq_sink, seq_stream) = Sequencer::<u32>::new(cfg).split();
 
         let mut expected = vec![4u32, 1, 5, 7, 8, 6, 2, 3];
 
         let expected_clone = expected.clone();
-        async_std::task::spawn(async move {
+        let jh = hopr_async_runtime::prelude::spawn(async move {
             for v in expected_clone {
                 seq_sink.feed(v).await?;
             }
@@ -196,12 +217,15 @@ mod tests {
 
         expected.sort();
         assert_eq!(expected, actual);
-        Ok(())
+
+        Ok(jh.await?)
     }
 
     #[test_log::test(async_std::test)]
     async fn sequencer_should_not_allow_emitted_entries() -> anyhow::Result<()> {
-        let (seq_sink, seq_stream) = Sequencer::<u32>::new(Duration::from_secs(2), 0).split();
+        let cfg = SequencerConfig::default();
+
+        let (seq_sink, seq_stream) = Sequencer::<u32>::new(cfg).split();
 
         pin_mut!(seq_sink);
         pin_mut!(seq_stream);
@@ -223,13 +247,17 @@ mod tests {
 
     #[test_log::test(async_std::test)]
     async fn sequencer_should_discard_entry_on_timeout() -> anyhow::Result<()> {
-        let timeout = Duration::from_millis(25);
-        let (mut seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
+        let cfg = SequencerConfig {
+            timeout: Duration::from_millis(25),
+            ..Default::default()
+        };
+
+        let (mut seq_sink, seq_stream) = Sequencer::<u32>::new(cfg).split();
 
         let input = vec![2u32, 1, 4, 5, 8, 7, 9, 11, 10];
 
         let input_clone = input.clone();
-        async_std::task::spawn(async move {
+        let jh = hopr_async_runtime::prelude::spawn(async move {
             for v in input_clone {
                 seq_sink.feed(v).delay(Duration::from_millis(5)).await?;
             }
@@ -247,7 +275,7 @@ mod tests {
             seq_stream.try_next().await,
             Err(SessionError::FrameDiscarded(3))
         ));
-        assert!(now.elapsed() >= timeout);
+        assert!(now.elapsed() >= cfg.timeout);
 
         assert_eq!(Some(4), seq_stream.try_next().await?);
         assert_eq!(Some(5), seq_stream.try_next().await?);
@@ -265,17 +293,21 @@ mod tests {
 
         assert_eq!(None, seq_stream.try_next().await?);
 
-        Ok(())
+        Ok(jh.await?)
     }
 
     #[test_log::test(async_std::test)]
     async fn sequencer_should_discard_entry_close() -> anyhow::Result<()> {
-        let timeout = Duration::from_millis(25);
-        let (seq_sink, seq_stream) = Sequencer::<u32>::new(timeout, 0).split();
+        let cfg = SequencerConfig {
+            timeout: Duration::from_millis(25),
+            ..Default::default()
+        };
+
+        let (seq_sink, seq_stream) = Sequencer::<u32>::new(cfg).split();
 
         let input = vec![2u32, 1, 3, 5, 4, 8, 11];
 
-        let _ = async_std::task::spawn(futures::stream::iter(input.clone()).map(Ok).forward(seq_sink)).await;
+        hopr_async_runtime::prelude::spawn(futures::stream::iter(input.clone()).map(Ok).forward(seq_sink)).await?;
 
         pin_mut!(seq_stream);
 

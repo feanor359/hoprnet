@@ -36,7 +36,7 @@ pub enum SessionError {
     #[error("received a segment of a frame {0} that was already completed or evicted")]
     OldSegment(FrameId),
 
-    #[error("frame {0} has expired and has been evicted")]
+    #[error("frame {0} has expired or has been discarded")]
     FrameDiscarded(FrameId),
 
     #[error("frame reassembler is closed")]
