@@ -71,7 +71,7 @@ tokio = { workspace = true, optional = true }
 tokio-retry = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 validator = { workspace = true }
 
 opentelemetry = { workspace = true, optional = true }
@@ -90,6 +90,7 @@ hopr-lib = { workspace = true, features = [
   "session-client",
   "session-server",
 ] }
+hoprd-db-api = { workspace = true }
 hoprd-api = { workspace = true }
 hoprd-inbox = { workspace = true }
 hoprd-keypair = { workspace = true }
