@@ -1295,13 +1295,18 @@ dependencies = [
  "lazy_static",
  "mockall",
  "mockito",
+ "moka",
  "primitive-types",
  "reqwest 0.12.7",
  "serde",
  "serde_json",
+ "serde_with",
+ "serde_yaml",
  "smart-default",
  "surf",
  "surf-governor",
+ "tempfile",
+ "test-log",
  "thiserror",
  "tokio",
  "tracing",
@@ -1319,6 +1324,7 @@ dependencies = [
  "hopr-crypto-types",
  "hopr-internal-types",
  "hopr-primitive-types",
+ "lazy_static",
  "libp2p-identity",
  "multiaddr",
  "serde",
@@ -3919,7 +3925,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-crypto-random"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "generic-array",
  "rand 0.8.5",
@@ -4117,7 +4123,9 @@ dependencies = [
  "ethers",
  "futures",
  "futures-concurrency",
+ "hex-literal",
  "hopr-async-runtime",
+ "hopr-crypto-random",
  "hopr-crypto-types",
  "hopr-db-sql",
  "hopr-internal-types",
@@ -4419,6 +4427,7 @@ dependencies = [
  "futures",
  "home",
  "hopr-async-runtime",
+ "hopr-crypto-random",
  "hopr-lib",
  "hopr-metrics",
  "hopr-network-types",
@@ -4451,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd-api"
-version = "3.3.2"
+version = "3.4.0"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -4463,6 +4472,7 @@ dependencies = [
  "futures-concurrency",
  "hopr-async-runtime",
  "hopr-crypto-types",
+ "hopr-db-sql",
  "hopr-lib",
  "hopr-metrics",
  "hopr-network-types",
@@ -4719,7 +4729,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.7",
  "tokio",
  "tower-service",
  "tracing",
@@ -5120,7 +5130,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a45489186a6123c128fdf6016183fcfab7113e1820eb813127e036e287233fb"
 dependencies = [
  "jiff-tzdb-platform",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10045,7 +10055,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
