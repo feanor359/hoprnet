@@ -131,7 +131,7 @@ jobs:
       - name: Setup Load Testing environment
         run: |
           npm install
-          npm run test:${{ steps.vars.outputs.NODES }}:setup
+          npm run setup:${{ steps.vars.outputs.NODES }}
         working-directory: "./k6"
         env:
           HOPRD_API_TOKEN: ${{ steps.token.outputs.HOPRD_API_TOKEN }}
