@@ -24,7 +24,7 @@ random.seed(SEED)
 
 
 async def bringup(
-    config: str, test_mode: bool = False, fully_connected: bool = False
+    config: str, test_mode: bool = False, fully_connected: bool = False, threat_config: Optional[str] = None
 ) -> Optional[Tuple[Cluster, Anvil]]:
     logging.info(f"Using the random seed: {SEED}")
 
@@ -35,7 +35,12 @@ async def bringup(
     with open(config, "r") as f:
         config = yaml.safe_load(f)
 
-    cluster = Cluster(config, ANVIL_CONFIG_FILE, ANVIL_FOLDER.joinpath("protocol-config.json"))
+    # optionally load threat config
+    if threat_config:
+        with open(threat_config, "r") as f:
+            threat_config = yaml.safe_load(f)
+
+    cluster = Cluster(config, ANVIL_CONFIG_FILE, ANVIL_FOLDER.joinpath("protocol-config.json"), threat_config)
     anvil = Anvil(ANVIL_FOLDER.joinpath("anvil.log"), ANVIL_CONFIG_FILE, ANVIL_FOLDER.joinpath("anvil.state.json"))
 
     snapshot = Snapshot(PORT_BASE, MAIN_DIR, cluster)

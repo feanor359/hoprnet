@@ -70,6 +70,10 @@ def nodes_with_lower_outgoing_win_prob():
     """Nodes with outgoing ticket winning probability"""
     return ["6"]
 
+def nodes_threat_testing():
+    """Nodes set up for special testing"""
+    return ["1", "2", "3"]
+
 
 def random_distinct_pairs_from(values: list, count: int):
     return random.sample([(left, right) for left, right in itertools.product(values, repeat=2) if left != right], count)
@@ -77,6 +81,20 @@ def random_distinct_pairs_from(values: list, count: int):
 
 @pytest.fixture(scope="module")
 async def swarm7(request):
+    # path is related to where the test is run. Most likely the root of the repo
+    cluster, anvil = await localcluster.bringup(
+        "./sdk/python/localcluster.params.yml", test_mode=True, fully_connected=False
+    )
+
+    yield cluster.nodes
+
+    cluster.clean_up()
+    anvil.kill()
+
+# This new swarm fixture is used to individually configure three hopr nodes.
+# It simplifies creating test scenarious with malicious node/s
+@pytest.fixture(scope="module")
+async def swarm3(request):
     # path is related to where the test is run. Most likely the root of the repo
     cluster, anvil = await localcluster.bringup(
         "./sdk/python/localcluster.params.yml", test_mode=True, fully_connected=False
@@ -101,6 +119,21 @@ async def teardown(swarm7: dict[str, Node]):
         await asyncio.gather(*[node.api.messages_pop_all(None) for node in swarm7.values()])
     except Exception as e:
         logging.error(f"Error popping all messages in teardown: {e}")
+
+@pytest.fixture(scope="module", autouse=True)
+async def teardown(swarm3: dict[str, Node]):
+    yield
+
+    try:
+        await asyncio.gather(*[node.api.reset_tickets_statistics() for node in swarm3.values()])
+    except Exception as e:
+        logging.error(f"Error resetting tickets statistics in teardown: {e}")
+
+    try:
+        await asyncio.gather(*[node.api.messages_pop_all(None) for node in swarm3.values()])
+    except Exception as e:
+        logging.error(f"Error popping all messages in teardown: {e}")
+
 
 
 def to_ws_url(host, port, args: list[tuple[str, str]]):

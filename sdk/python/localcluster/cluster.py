@@ -1,8 +1,10 @@
 import asyncio
 import os
 import shutil
+import collections.abc
 from pathlib import Path
 from subprocess import run
+from typing import Optional
 
 from . import utils
 from .constants import (
@@ -21,16 +23,36 @@ GLOBAL_TIMEOUT = 60
 
 
 class Cluster:
-    def __init__(self, config: dict, anvil_config: Path, protocol_config: Path):
+    def __init__(self, config: dict, anvil_config: Path, protocol_config: Path, threat_config: Optional[dict] = None):
         self.anvil_config = anvil_config
         self.protocol_config = protocol_config
         self.nodes: dict[str, Node] = {}
         index = 1
 
+        # override the normal config
+        if threat_config:
+            config = self.merge_dicts(self, config, threat_config)
+            logging.info(f"Merging config and threat_config: {self.config}")
+
         for network_name, params in config["networks"].items():
             for alias, node in params["nodes"].items():
                 self.nodes[str(index)] = Node.fromConfig(index, alias, node, config["api_token"], network_name)
                 index += 1
+
+    # threat_config overrides normal config for all values with the same key
+    # values with different keys are included from both config files
+    def merge_dicts(self, config: dict, threat_config: dict):
+        merged = config.copy()  # Start with default config
+
+        for key, value in threat_config.items():
+            if isinstance(value, collections.abc.Mapping) and key in merged and isinstance(merged[key], dict):
+                # If both are dictionaries, recurse
+                merged[key] = self.merge_dicts(merged[key], value)
+            else:
+                # Otherwise, override or add new key-value pair
+                merged[key] = value
+
+        return merged
 
     def clean_up(self):
         logging.info(f"Tearing down the {self.size} nodes cluster")

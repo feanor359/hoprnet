@@ -74,6 +74,16 @@ class Node:
         self.api_port = PORT_BASE + (self.id * 10) + 1
         self.p2p_port = PORT_BASE + (self.id * 10) + 2
 
+        if "additional_settings" in self.cfg_file:
+            if "env_variables" in self.cfg_file["additional_settings"]:
+                env_variables = self.cfg_file["additional_settings"]["env_variables"]
+                with open(self.cfg_file_path, "w") as env_file:
+                    for key, value in env_variables.items():
+                        # Convert value to string to ensure proper formatting
+                        env_value = str(value)
+                        env_file.write(f"{key}={env_value}\n")
+                        print(f"Written to .env: {key}={env_value}")  # Debugging output
+
     def load_addresses(self):
         loaded_env = load_env_file(self.dir.joinpath(".env"))
         self.safe_address = loaded_env.get("HOPRD_SAFE_ADDRESS")
@@ -230,6 +240,10 @@ class Node:
             if peer_id == self.peer_id:
                 continue
             await self.api.aliases_set_alias(alias, peer_id)
+
+    def apply_additional_settings(self, config: dict):
+
+        return
 
     async def connect_peers(self, peer_ids: list[str]):
         tasks = []
