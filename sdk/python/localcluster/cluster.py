@@ -1,8 +1,10 @@
 import asyncio
 import os
 import shutil
+import collections.abc
 from pathlib import Path
 from subprocess import run
+from typing import Optional
 
 from . import utils
 from .constants import (
@@ -21,7 +23,7 @@ GLOBAL_TIMEOUT = 60
 
 
 class Cluster:
-    def __init__(self, config: dict, anvil_config: Path, protocol_config: Path, use_nat):
+    def __init__(self, config: dict, anvil_config: Path, protocol_config: Path, use_nat, extra_env: Optional[dict] = None):
         self.anvil_config = anvil_config
         self.protocol_config = protocol_config
         self.use_nat = use_nat
@@ -30,7 +32,7 @@ class Cluster:
 
         for network_name, params in config["networks"].items():
             for alias, node in params["nodes"].items():
-                self.nodes[str(index)] = Node.fromConfig(index, alias, node, config["api_token"], network_name, use_nat)
+                self.nodes[str(index)] = Node.fromConfig(index, alias, node, config["api_token"], network_name, use_nat, extra_env.get(alias, {}))
                 index += 1
 
     def clean_up(self):

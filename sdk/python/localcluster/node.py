@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 from subprocess import STDOUT, Popen, run
+from typing import Optional
 
 from ..api import HoprdAPI
 from . import utils
@@ -43,6 +44,7 @@ class Node:
         cfg_file: str,
         alias: str,
         use_nat: bool,
+        env: Optional[dict] = None,
     ):
         # initialized
         self.id = id
@@ -52,6 +54,7 @@ class Node:
         self.network: str = network
         self.identity_path: str = identity_path
         self.use_nat: bool = use_nat
+        self.env: dict = env
 
         # optional
         self.cfg_file: str = cfg_file
@@ -82,6 +85,13 @@ class Node:
         self.cfg_file_path = MAIN_DIR.joinpath(self.cfg_file)
         self.api_port = PORT_BASE + (self.id * 10) + 1
         self.p2p_port = PORT_BASE + (self.id * 10) + 2
+
+    def add_additional_settings(self, custom_env: dict):
+        if self.env:
+            logging.info(f"Node: {self.alias} Applying additional environment variables: {self.env}")
+            for key, value in self.env.items():
+                env_value = str(value)
+                custom_env[key] = env_value
 
     def load_addresses(self):
         loaded_env = load_env_file(self.dir.joinpath(".env"))
@@ -177,6 +187,10 @@ class Node:
             "TOKIO_CONSOLE_BIND": f"localhost:{self.p2p_port+100}",
             "HOPRD_NAT": "true" if self.use_nat else "false",
         }
+
+        # Add additional settings to custom_env
+        self.add_additional_settings(custom_env)
+
         loaded_env = load_env_file(self.dir.joinpath(".env"))
 
         cmd = [
@@ -236,14 +250,14 @@ class Node:
         self.proc.kill()
 
     @classmethod
-    def fromConfig(cls, index: int, alias: str, config: dict, api_token: dict, network: str, use_nat: bool):
+    def fromConfig(cls, index: int, alias: str, config: dict, api_token: dict, network: str, use_nat: bool, extra_env: Optional[dict] = None):
         token = api_token["default"]
 
         if "api_token" in config:
             token = config["api_token"]
 
         return cls(
-            index, token, config["host"], network, config["identity_path"], config["config_file"], alias, use_nat
+            index, token, config["host"], network, config["identity_path"], config["config_file"], alias, use_nat, extra_env,
         )
 
     async def alias_peers(self, aliases_dict: dict[str, str]):
