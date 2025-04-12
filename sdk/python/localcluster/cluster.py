@@ -32,7 +32,7 @@ class Cluster:
 
         for network_name, params in config["networks"].items():
             for alias, node in params["nodes"].items():
-                self.nodes[str(index)] = Node.fromConfig(index, alias, node, config["api_token"], network_name, use_nat, extra_env.get(alias, {}))
+                self.nodes[str(index)] = Node.fromConfig(index, alias, node, config["api_token"], network_name, use_nat, extra_env.get(alias, {}) if extra_env else {})
                 index += 1
 
     def clean_up(self):

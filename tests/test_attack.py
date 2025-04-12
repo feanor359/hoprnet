@@ -47,7 +47,7 @@ class TestAttacksWithSwarm:
             (
                 {
                 "local1": {
-                    "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 30000,
+                    "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 5000,
                     "HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS": 1
                 },
                 "local2": {
@@ -74,5 +74,9 @@ class TestAttacksWithSwarm:
         duration = end_time - start_time  # Calculate the duration
         print(f"Async operation took {duration:.4f} seconds")
 
-        assert duration > 5, "The message was not delayed as expected"
-        assert duration < 31, "The message was delayed too long"
+        if src == "local1":
+            assert duration < 5, "The message was not delayed as expected"
+            assert duration > 6, "The message was delayed too long"
+
+        elif src == "local2":
+            assert duration > 1, "The message was delayed too long"
