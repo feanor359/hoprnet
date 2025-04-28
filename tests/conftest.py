@@ -74,6 +74,9 @@ def nodes_with_lower_outgoing_win_prob():
 def attacking_nodes():
     return ["1", "2"]
 
+def session_attack_nodes():
+    return ["1", "2", "3"]
+
 
 def random_distinct_pairs_from(values: list, count: int):
     return random.sample([(left, right) for left, right in itertools.product(values, repeat=2) if left != right], count)
@@ -99,6 +102,7 @@ async def swarm3(request):
     extra_params = request.config.cache.get("yaml_config", None)
     if extra_params is not None:
         extra_params = yaml.safe_load(extra_params)
+        request.config.cache.set("yaml_config", None)
 
     cluster, anvil = await localcluster.bringup(params_path, test_mode=True, fully_connected=False, use_nat=True, extra_env=extra_params)
 
@@ -106,6 +110,12 @@ async def swarm3(request):
 
     cluster.clean_up()
     anvil.kill()
+
+@pytest.fixture(scope="function")
+async def swarm3_reset(request):
+    request.config.cache.set("yaml_config", None)
+
+    yield
 
 @pytest.fixture(scope="session")
 async def swarm7(request):
