@@ -82,7 +82,7 @@ def random_distinct_pairs_from(values: list, count: int):
     return random.sample([(left, right) for left, right in itertools.product(values, repeat=2) if left != right], count)
 
 def first_two_from(values: list):
-    return [(left, right) for left, right in itertools.product(values, repeat=2) if left != right]
+    return [(values[0], values[1])]
 
 @pytest.fixture(scope="function", autouse=True)
 def config_to_yaml(request):
