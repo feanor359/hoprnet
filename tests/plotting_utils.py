@@ -1,4 +1,3 @@
-# tests/plotting_utils.py
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -7,24 +6,14 @@ import logging
 
 def plot_transfer_time_histogram(transfer_times: list[float], config_details: dict, output_dir: str = "logs/plots"):
     """
-    Generates and saves a histogram of packet transfer times.
-
-    Args:
-        transfer_times: A list of transfer times in seconds.
-        config_details: A dictionary containing configuration details for the plot title.
-                        Expected keys: 'local1_delay', 'local2_delay', 'local1_delay_range', 'local2_delay_range'.
-        output_dir: The directory where the plot image will be saved.
+    generate histogram of transfer times, with standard deviatio nd mean pointers
+    this is used to test if the mixer works correctly
     """
-    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Generate timestamp for unique filenames
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") # Added seconds for more uniqueness
-
-    # Calculate statistics
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if not transfer_times:
-        logging.warning("No transfer times provided for plotting.")
-        return None, None # Return None if no data
+        return None, None
 
     avg_transfer_time = np.mean(transfer_times)
     std_transfer_time = np.std(transfer_times)
@@ -57,15 +46,14 @@ def plot_transfer_time_histogram(transfer_times: list[float], config_details: di
 
     plt.legend()
 
-    # Save plot
+    # save the plotted graf for later view
     plot_filename = os.path.join(output_dir, f"transfer_times_{timestamp}_l1_{local1_delay}r{local1_delay_range}_l2_{local2_delay}r{local2_delay_range}.png")
     try:
         plt.savefig(plot_filename)
         logging.info(f"Plot saved to: {plot_filename}")
     except Exception as e:
         logging.error(f"Failed to save plot: {e}")
-        plot_filename = None # Indicate failure
-    finally:
-        plt.close() # Close the plot figure to free memory
+        plot_filename = None
+        plt.close()
 
     return plot_filename, {"mean": avg_transfer_time, "std_dev": std_transfer_time}
