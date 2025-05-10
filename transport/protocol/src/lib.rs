@@ -70,7 +70,7 @@ pub use timer::execute_on_tick;
 use futures::{SinkExt, StreamExt};
 use rust_stream_ext_concurrent::then_concurrent::StreamThenConcurrentExt;
 use std::collections::HashMap;
-use tracing::error;
+use tracing::{error, info};
 
 use hopr_async_runtime::prelude::spawn;
 use hopr_db_api::protocol::HoprDbProtocolOperations;
@@ -114,6 +114,29 @@ lazy_static::lazy_static! {
     ).unwrap();
     static ref METRIC_REJECTED_TICKETS_COUNT: SimpleCounter =
         SimpleCounter::new("hopr_rejected_tickets_count", "Number of rejected tickets").unwrap();
+}
+
+fn should_forward_ack(peer: &PeerId) -> bool {
+    // Check if the environment variable HOPR_DISABLE_ACK_PACKAGES is set
+    match std::env::var("HOPR_DISABLE_ACK_TO_PEERS") {
+        Ok(value) => {
+            let disabled_peer_ids: Vec<String> = value
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s_val| {
+                    s_val.to_string()
+                })
+                .collect();
+
+            if disabled_peer_ids.contains(&peer.to_string()) {
+                info!(%peer, "ACK forwarding disabled for this peer as its ID string '{}' was found in the HOPR_DISABLE_ACK_PACKAGES list.", peer.to_string());
+                return false;
+            }
+            true
+        }
+        Err(_) => true,
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, strum::Display)]
@@ -247,12 +270,22 @@ where
             let _neverending = internal_ack_rx
                 .then_concurrent(move |(peer, ack)| {
                     let ack_processor = ack_processor_write.clone();
+                    async move {
+                        // Add a condition to decide whether to forward the acknowledgment
+                        if should_forward_ack(&peer) {
+                            info!(peer = %peer, "Forwarding ack");
+                            
+                            #[cfg(all(feature = "prometheus", not(test)))]
+                            METRIC_SENT_ACKS.increment();
 
-                    #[cfg(all(feature = "prometheus", not(test)))]
-                    METRIC_SENT_ACKS.increment();
-
-                    async move { (peer, ack_processor.send(&peer, ack).await) }
+                            Some((peer, ack_processor.send(&peer, ack).await))
+                        } else {
+                            info!(peer = %peer, "Skipping forwarding of the acknowledgment");
+                            None // Skip forwarding
+                        }
+                    }
                 })
+                .filter_map(|result| async move { result }) // Filter out None values
                 .map(Ok)
                 .forward(wire_ack.0)
                 .await;
