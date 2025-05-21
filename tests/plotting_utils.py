@@ -28,12 +28,12 @@ def plot_transfer_time_histogram(transfer_times: list[float], config_details: di
     )
 
     # Add labels and title
-    plt.xlabel('Transfer Time (seconds)')
-    plt.ylabel('Number of Packets')
-    local1_delay = config_details.get('local1_delay', 'N/A')
-    local2_delay = config_details.get('local2_delay', 'N/A')
-    local1_delay_range = config_details.get('local1_delay_range', 'N/A')
-    local2_delay_range = config_details.get('local2_delay_range', 'N/A')
+    plt.xlabel('transfer time (seconds)')
+    plt.ylabel('number of packets')
+    local1_delay = config_details.get('local1_delay', 'None')
+    local2_delay = config_details.get('local2_delay', 'None')
+    local1_delay_range = config_details.get('local1_delay_range', 'None')
+    local2_delay_range = config_details.get('local2_delay_range', 'None')
     title = (f'Packet Transfer Time Distribution\n'
              f'Local1 Delay: {local1_delay}ms (Range: {local1_delay_range}ms), '
              f'Local2 Delay: {local2_delay}ms (Range: {local2_delay_range}ms)')

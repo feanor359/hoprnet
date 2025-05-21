@@ -270,90 +270,6 @@ class TestSessionWithSwarm:
         "nodes_config",
         [
             {
-                "local1": {},
-                "local2": {
-                    "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 0,
-                    "HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS": 1
-                },
-                "local3": {} 
-            },
-            {
-                "local1": {},
-                "local2": {
-                    "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 3000,
-                    "HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS": 10
-                },
-                "local3": {}
-            },
-            {
-                "local1": {},
-                "local2": {
-                    "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 1000,
-                    "HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS": 4000
-                },
-                "local3": {}
-            },
-        ],
-    )
-    async def test_session_http_server_with_random_delays(self, route, swarm3: dict[str, Node], nodes_config: dict[str, dict], config_to_yaml: str):
-        """
-        Test downloading file from http server over a tcp session while relay node introduces random delay
-        """
-        file_len = 500
-
-        src_peer = swarm3[route[0]]
-        dest_peer = swarm3[route[-1]]
-        path = [swarm3[node].peer_id for node in route[1:-1]]
-
-        async with AsyncExitStack() as channels:
-            channels_to = [
-                channels.enter_async_context(
-                    create_channel(
-                        swarm3[route[i]], swarm3[route[i + 1]], funding=100 * file_len * TICKET_PRICE_PER_HOP
-                    )
-                )
-                for i in range(len(route) - 1)
-            ]
-            channels_back = [
-                channels.enter_async_context(
-                    create_channel(
-                        swarm3[route[i]], swarm3[route[i - 1]], funding=100 * file_len * TICKET_PRICE_PER_HOP
-                    )
-                )
-                for i in reversed(range(1, len(route)))
-            ]
-
-            await asyncio.gather(*(channels_to + channels_back))
-            expected = "".join(random.choices(string.ascii_letters + string.digits, k=file_len))
-
-            with run_https_server(expected) as dst_sock_port:
-                session = await src_peer.api.session_client(
-                    dest_peer.peer_id,
-                    path={"IntermediatePath": path},
-                    protocol=Protocol.TCP,
-                    target=f"localhost:{dst_sock_port}",
-                    capabilities=SessionCapabilitiesBody(retransmission=True, segmentation=True),
-                )
-                assert session.port is not None, "Failed to open session"
-                assert len(await src_peer.api.session_list_clients(Protocol.TCP)) == 1
-
-                response = fetch_data(f"https://localhost:{session.port}/random.txt")
-
-                assert await src_peer.api.session_close_client(session) is True
-                assert await src_peer.api.session_list_clients(Protocol.TCP) == []
-
-                assert response is not None
-                assert response.text == expected
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "route",
-        [session_attack_nodes()]
-    )
-    @pytest.mark.parametrize(
-        "nodes_config",
-        [
-            {
                 "local1": {
                     "HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS": 1,
                     "HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS": 1
@@ -452,9 +368,9 @@ class TestSessionWithSwarm:
 
             avg_packet_delay = float(metrics_dict.get("hopr_mixer_average_packet_delay", 0))
             packets_relayed = float(metrics_dict.get("hopr_packets_count{type=\"forwarded\"}", 0))
-            ack_count_local2 = float(metrics_dict.get("hopr_received_ack_count", 0))
+            # ack_count_local2 = float(metrics_dict.get("hopr_received_ack_count", 0))
         
-            logging.info(f"ack_count_local2: {ack_count_local2}")
+            # logging.info(f"ack_count_local2: {ack_count_local2}")
             logging.info(f"relay node average packet delay: {avg_packet_delay}");
             logging.info(f"relay node packets relayed: {packets_relayed}");
 

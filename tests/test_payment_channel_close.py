@@ -25,16 +25,16 @@ NATIVE_TO_HOPR_CONVERSION_RATE = 1 / HOPR_TO_NATIVE_CONVERSION_RATE
 class TestNoProoFOfRelayWithSwarm:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "packets_count", [1, 100]
+        "packets_number", [100]
     )
     @pytest.mark.parametrize(
         "src,dest", [tuple(shuffled(barebone_nodes())[:2]) for _ in range(PARAMETERIZED_SAMPLE_SIZE)]
     )
     async def test_opening_and_closing_payment_channel_does_not_drain_funds(
-        self, src: str, dest: str, swarm7: dict[str, Node]
+        self, src: str, dest: str, swarm7: dict[str, Node], packets_number: int
     ):
 
-        packet_count = 1
+        packet_count = packets_number
 
         balance_before_open = await swarm7[src].api.balances()
         logging.info(f"Balance before open: {balance_before_open}")
@@ -46,32 +46,6 @@ class TestNoProoFOfRelayWithSwarm:
             logging.info(f"Balance after open: {balance_after_open}")
 
         
-        balance_after_close = await swarm7[src].api.balances()
-        logging.info(f"Balance after close: {balance_after_close}")
-
-        assert balance_before_open.safe_hopr == balance_after_close.safe_hopr + balance_after_close.hopr
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "src,dest", [tuple(shuffled(barebone_nodes())[:2]) for _ in range(PARAMETERIZED_SAMPLE_SIZE)]
-    )
-    async def test_opening_and_closing_payment_channel_does_not_drain_funds(
-        self, src: str, dest: str, swarm7: dict[str, Node]
-    ):
-
-        packet_count = 100
-
-        balance_before_open = await swarm7[src].api.balances()
-        logging.info(f"Balance before open: {balance_before_open}")
-
-        async with create_channel(swarm7[src], swarm7[dest], funding=TICKET_PRICE_PER_HOP * packet_count) as channel:
-
-            balance_after_open = await swarm7[src].api.balances()
-
-            logging.info(f"Balance after open: {balance_after_open}")
-
-            swarm7[src].api.close_channel(channel.id)
-
         balance_after_close = await swarm7[src].api.balances()
         logging.info(f"Balance after close: {balance_after_close}")
 

@@ -20,10 +20,8 @@ from .utils import (
     send_and_receive_packets_with_pop,
     gen_random_tag,
 )
-# Import the new plotting function
 from .plotting_utils import plot_transfer_time_histogram
 
-# used by nodes to get unique port assignments
 PORT_BASE = 19000
 
 DEFAULT_ARGS = [
