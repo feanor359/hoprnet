@@ -56,7 +56,7 @@ class TestNoProoFOfRelayWithSwarm:
         "src,dest", [tuple(attacking_nodes())]
     )
     async def test_send_until_value_exceeds_redemption_cost_then_close(
-        self, src: str, dest: str, swarm3: dict[str, Node]
+        self, src: str, dest: str, swarm7: dict[str, Node]
     ):
         """
         Opens a channel, sends messages until unredeemed ticket value on dest
@@ -71,19 +71,18 @@ class TestNoProoFOfRelayWithSwarm:
         channel_closed_due_to_cost = False
         
 
-        funding = message_count * TICKET_PRICE_PER_HOP
-        channel = await swarm3[src].api.open_channel(swarm3[dest].peer_id, str(int(funding)))
-        assert channel is not None
-        await asyncio.wait_for(check_channel_status(swarm3[src], swarm3[dest], status=ChannelStatus.Open), 10.0)
+        funding = message_count * TICKET_PRICE_PER_HOP * 100
+        channel = await swarm7[src].api.open_channel(swarm7[dest].peer_id, str(int(funding)))
+        await asyncio.wait_for(check_channel_status(swarm7[src], swarm7[dest], status=ChannelStatus.Open), 10.0)
         for i in range(message_count):
             message_content = f"message_series_{i}"
                 
             await send_and_receive_packets_with_pop(
-                [message_content], src=swarm3[src], dest=swarm3[src], path=[swarm3[dest].peer_id]
+                [message_content], src=swarm7[src], dest=swarm7[src], path=[swarm7[dest].peer_id]
             )
 
             messages_sent_count += 1
-            dest_ticket_stats = await swarm3[dest].api.get_tickets_statistics()
+            dest_ticket_stats = await swarm7[dest].api.get_tickets_statistics()
             current_unredeemed_value_on_dest = int(dest_ticket_stats.unredeemed_value or 0) * HOPR_TO_NATIVE_CONVERSION_RATE
 
             logging.info(
@@ -98,7 +97,7 @@ class TestNoProoFOfRelayWithSwarm:
                     f"met/exceeded redemption cost ({estimated_redemption_cost_wei}). Closing channel."
                 )
 
-                close_response = await swarm3[src].api.close_channel(channel.id)
+                close_response = await swarm7[src].api.close_channel(channel.id)
                 assert close_response is not None, "Failed to initiate channel closing."
 
                 channel_closed_due_to_cost = True
@@ -110,7 +109,7 @@ class TestNoProoFOfRelayWithSwarm:
                         f"({current_unredeemed_value_on_dest}) did not reach redemption cost "
                         f"({estimated_redemption_cost_wei}). Channel will be closed by context manager."
                         )
-                    close_response = await swarm3[src].api.close_channel(channel.id)
+                    close_response = await swarm7[src].api.close_channel(channel.id)
                     assert close_response is not None, "Failed to initiate channel closing."
 
                 
